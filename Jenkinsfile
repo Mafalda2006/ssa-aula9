@@ -3,6 +3,7 @@ pipeline {
     options { skipDefaultCheckout(true); disableConcurrentBuilds() }
 
     triggers {
+        pollSCM('H/2 * * * *')
         // TODO: investigar e configurar a alternativa com webhook.
         // githubPush()
     }
