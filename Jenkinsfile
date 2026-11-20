@@ -37,5 +37,17 @@ pipeline {
                     '''
             }
         }
+
+        environment { APP_IMAGE = "classroom-app:${BUILD_NUMBER}" }
+
+        stage('Build application image') {
+            steps { sh 'docker build -t "$APP_IMAGE" .' }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker image rm "$APP_IMAGE" 2>/dev/null || true'
+        }
     }
 }
