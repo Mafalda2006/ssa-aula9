@@ -1,6 +1,20 @@
+
 pipeline {
-    agent { node { label ''; customWorkspace '/workspace/devsecops-lab' } }
-    options { skipDefaultCheckout(true); disableConcurrentBuilds() }
+    agent {
+        node {
+            label ''
+            customWorkspace '/workspace/devsecops-lab'
+        }
+    }
+
+    options {
+        skipDefaultCheckout(true)
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        APP_IMAGE = "classroom-app:${BUILD_NUMBER}"
+    }
 
     triggers {
         pollSCM('H/2 * * * *')
@@ -9,14 +23,18 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 checkout scm
                 sh 'git rev-parse HEAD'
             }
         }
+
         stage('Verify Docker') {
-            steps { sh 'docker version' }
+            steps {
+                sh 'docker version'
+            }
         }
 
         stage('SCA - Trivy') {
@@ -24,30 +42,50 @@ pipeline {
                 sh '''
                     docker run --rm -v "$WORKSPACE:/src" -w /src \
                     aquasec/trivy:0.58.2 fs --scanners vuln --exit-code 0 .
-                    '''
+                '''
             }
         }
 
         stage('SAST - Bandit') {
             steps {
-                sh 'docker build -f ci/Dockerfile.bandit -t classroombandit:local .'
+                sh 'docker build -f ci/Dockerfile.bandit -t classroom-bandit:local .'
+
                 sh '''
-                    docker run --rm -v "$WORKSPACE:/src" \
+                    docker run --rm -v "$WORKSPACE:/src" -w /src \
                     classroom-bandit:local -r app --exit-zero
-                    '''
+                '''
             }
         }
 
-        environment { APP_IMAGE = "classroom-app:${BUILD_NUMBER}" }
-
         stage('Build application image') {
-            steps { sh 'docker build -t "$APP_IMAGE" .' }
+            steps {
+                sh 'docker build -t "$APP_IMAGE" .'
+            }
+        }
+
+        stage('Image scan - Trivy') {
+            steps {
+                sh 'docker save "$APP_IMAGE" -o app-image.tar'
+
+                sh '''
+                    docker run --rm -v "$WORKSPACE:/src" -w /src \
+                    aquasec/trivy:0.58.2 image --input app-image.tar \
+                    --scanners vuln --exit-code 0
+                '''
+            }
+
+            post {
+                always {
+                    sh 'rm -f app-image.tar'
+                }
+            }
         }
     }
 
     post {
         always {
             sh 'docker image rm "$APP_IMAGE" 2>/dev/null || true'
+            sh 'docker image rm classroom-bandit:local 2>/dev/null || true'
         }
     }
 }
